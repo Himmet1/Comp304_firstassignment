@@ -1,6 +1,8 @@
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -401,11 +403,19 @@ void setup_redirections(struct command_t *command) {
   }
 }
 
-/**
- * Execute a single command (used by both simple and piped execution).
- * Resolves the path and calls execv(). Does not return on success.
- */
+// Forward declarations for builtin commands
+int builtin_cut(struct command_t *command);
+
+// Execute a single command (used by both simple and piped execution).
+// Resolves the path and calls execv(). Does not return on success.
+// Also handles builtin commands so they work inside pipelines.
 void exec_command(struct command_t *command) {
+  // Handle builtin commands inside pipelines too
+  if (strcmp(command->name, "cut") == 0) {
+    builtin_cut(command);
+    exit(0);
+  }
+
   char resolved_path[1024];
   if (resolve_path(command->name, resolved_path, sizeof(resolved_path)) != 0) {
     printf("-%s: %s: command not found\n", sysname, command->name);
@@ -416,10 +426,8 @@ void exec_command(struct command_t *command) {
   exit(127);
 }
 
-/**
- * Execute a pipeline of commands recursively.
- * Each command in the chain is connected via pipes.
- */
+// Execute a pipeline of commands recursively.
+// Each command in the chain is connected via pipes.
 void exec_pipeline(struct command_t *command) {
   if (command->next == NULL) {
     // Last (or only) command in the pipeline
@@ -437,14 +445,14 @@ void exec_pipeline(struct command_t *command) {
 
   pid_t pid = fork();
   if (pid == 0) {
-    // Child: runs the CURRENT command, writes to pipe
+    // Child: runs the current command, writes to pipe
     close(pipefd[0]); // close unused read end
     dup2(pipefd[1], STDOUT_FILENO); // stdout -> pipe write end
     close(pipefd[1]);
     setup_redirections(command);
     exec_command(command);
   } else {
-    // Parent: continues with the NEXT command, reads from pipe
+    // Parent: continues with the next command, reads from pipe
     close(pipefd[1]); // close unused write end
     dup2(pipefd[0], STDIN_FILENO); // stdin -> pipe read end
     close(pipefd[0]);
@@ -452,6 +460,235 @@ void exec_pipeline(struct command_t *command) {
     exec_pipeline(command->next); // recurse for next command
   }
 }
+
+// ============================================================
+// PART III: Builtin Commands
+// ============================================================
+
+// (a) cut command: reads from stdin, prints specified fields
+// Supports -d (delimiter) and -f (fields) options
+int builtin_cut(struct command_t *command) {
+  char delimiter = '\t'; // default delimiter is TAB
+  char *fields_str = NULL;
+
+  // Parse arguments: -d <delim> and -f <fields>
+  for (int i = 1; i < command->arg_count - 1; i++) {
+    if (command->args[i] == NULL) break;
+    if ((strcmp(command->args[i], "-d") == 0 || strcmp(command->args[i], "--delimiter") == 0)
+        && i + 1 < command->arg_count - 1) {
+      // Next arg is the delimiter character
+      delimiter = command->args[i + 1][0];
+      i++; // skip next arg
+    } else if ((strcmp(command->args[i], "-f") == 0 || strcmp(command->args[i], "--fields") == 0)
+               && i + 1 < command->arg_count - 1) {
+      fields_str = command->args[i + 1];
+      i++; // skip next arg
+    }
+  }
+
+  if (fields_str == NULL) {
+    fprintf(stderr, "cut: you must specify a list of fields with -f\n");
+    return SUCCESS;
+  }
+
+  // Parse the field indices from comma-separated string (e.g., "1,3,10")
+  int fields[64];
+  int field_count = 0;
+  char *fields_copy = strdup(fields_str);
+  char *tok = strtok(fields_copy, ",");
+  while (tok != NULL && field_count < 64) {
+    fields[field_count++] = atoi(tok);
+    tok = strtok(NULL, ",");
+  }
+  free(fields_copy);
+
+  // Read from stdin line by line and print selected fields
+  char line[4096];
+  while (fgets(line, sizeof(line), stdin) != NULL) {
+    // Remove trailing newline
+    size_t len = strlen(line);
+    if (len > 0 && line[len - 1] == '\n')
+      line[len - 1] = '\0';
+
+    // Split line by delimiter into tokens
+    char *tokens[256];
+    int token_count = 0;
+    char *line_copy = strdup(line);
+
+    // Manual tokenization to handle empty fields
+    char *start = line_copy;
+    char *end;
+    while ((end = strchr(start, delimiter)) != NULL && token_count < 256) {
+      *end = '\0';
+      tokens[token_count++] = start;
+      start = end + 1;
+    }
+    if (token_count < 256)
+      tokens[token_count++] = start; // last token
+
+    // Print selected fields
+    for (int i = 0; i < field_count; i++) {
+      int idx = fields[i] - 1; // convert to 0-indexed
+      if (i > 0) printf("%c", delimiter);
+      if (idx >= 0 && idx < token_count)
+        printf("%s", tokens[idx]);
+    }
+    printf("\n");
+    free(line_copy);
+  }
+
+  return SUCCESS;
+}
+
+// (b) chatroom command: group chat using named pipes (FIFOs)
+// Usage: chatroom <roomname> <username>
+int builtin_chatroom(struct command_t *command) {
+  if (command->arg_count < 3) {
+    fprintf(stderr, "Usage: chatroom <roomname> <username>\n");
+    return SUCCESS;
+  }
+
+  char *roomname = command->args[1];
+  char *username = command->args[2];
+
+  // Create room directory: /tmp/chatroom-<roomname>/
+  char room_path[512];
+  snprintf(room_path, sizeof(room_path), "/tmp/chatroom-%s", roomname);
+  mkdir(room_path, 0777);
+
+  // Create user's named pipe: /tmp/chatroom-<roomname>/<username>
+  char user_pipe_path[512];
+  snprintf(user_pipe_path, sizeof(user_pipe_path), "%s/%s", room_path, username);
+  mkfifo(user_pipe_path, 0666); // create named pipe (OK if already exists)
+
+  printf("Welcome to %s!\n", roomname);
+
+  // Fork a reader process that continuously reads from our named pipe
+  pid_t reader_pid = fork();
+  if (reader_pid == 0) {
+    // Child: reader process - reads messages from our pipe and prints them
+    while (1) {
+      int fd = open(user_pipe_path, O_RDONLY);
+      if (fd < 0) break;
+      char buf[1024];
+      ssize_t n;
+      while ((n = read(fd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        printf("%s", buf);
+        fflush(stdout);
+      }
+      close(fd);
+    }
+    exit(0);
+  }
+
+  // Parent: writer process - reads user input and writes to all other pipes
+  char msg_buf[1024];
+  while (1) {
+    printf("[%s] %s > ", roomname, username);
+    fflush(stdout);
+    if (fgets(msg_buf, sizeof(msg_buf), stdin) == NULL)
+      break;
+
+    // Remove trailing newline
+    size_t len = strlen(msg_buf);
+    if (len > 0 && msg_buf[len - 1] == '\n')
+      msg_buf[len - 1] = '\0';
+
+    if (strlen(msg_buf) == 0)
+      continue;
+
+    // Format the message
+    char formatted[1200];
+    snprintf(formatted, sizeof(formatted), "[%s] %s: %s\n", roomname, username, msg_buf);
+
+    // Send to all users in the room (write to each named pipe)
+    DIR *dir = opendir(room_path);
+    if (dir == NULL) {
+      perror("opendir");
+      continue;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+      // Skip . and .. and our own pipe
+      if (entry->d_name[0] == '.')
+        continue;
+      if (strcmp(entry->d_name, username) == 0)
+        continue;
+
+      char target_pipe[512];
+      snprintf(target_pipe, sizeof(target_pipe), "%s/%s", room_path, entry->d_name);
+
+      // Fork a child to write to each pipe (non-blocking)
+      pid_t wpid = fork();
+      if (wpid == 0) {
+        int fd = open(target_pipe, O_WRONLY);
+        if (fd >= 0) {
+          write(fd, formatted, strlen(formatted));
+          close(fd);
+        }
+        exit(0);
+      }
+    }
+    closedir(dir);
+
+    // Print our own message locally
+    printf("%s", formatted);
+  }
+
+  // Cleanup: kill reader process
+  kill(reader_pid, SIGTERM);
+  waitpid(reader_pid, NULL, 0);
+
+  return SUCCESS;
+}
+
+// (c) Custom command: countdown
+// A visual countdown timer that counts down from N seconds
+// Usage: countdown <seconds>
+int builtin_countdown(struct command_t *command) {
+  if (command->arg_count < 2 || command->args[1] == NULL) {
+    fprintf(stderr, "Usage: countdown <seconds>\n");
+    return SUCCESS;
+  }
+
+  int seconds = atoi(command->args[1]);
+  if (seconds <= 0) {
+    fprintf(stderr, "countdown: please provide a positive number of seconds\n");
+    return SUCCESS;
+  }
+
+  printf("\n");
+  for (int i = seconds; i > 0; i--) {
+    // Clear line and print countdown
+    printf("\r\033[K");  // clear line
+    // Sword progress bar: handle + guard + blade + tip
+    int bar_width = 50;
+    int filled = (int)((double)(seconds - i) / seconds * bar_width);
+    //         handle  guard
+    printf("  %3d sec  ◆═╬═", i);
+    for (int j = 0; j < bar_width; j++) {
+      if (j < filled)
+        printf("━");
+      else
+        printf("╌");
+    }
+    printf("▶  %d%%", (int)((double)(seconds - i) / seconds * 100));
+    fflush(stdout);
+    sleep(1);
+  }
+
+  // Final state: full sword
+  printf("\r\033[K");
+  printf("  ⚔️  Done!  ◆═╬═");
+  for (int j = 0; j < 50; j++) printf("━");
+  printf("▶  100%%\n\n");
+
+  return SUCCESS;
+}
+
+// ============================================================
 
 int process_command(struct command_t *command) {
   int r;
@@ -469,6 +706,16 @@ int process_command(struct command_t *command) {
       return SUCCESS;
     }
   }
+
+  // Part III: Builtin commands
+  if (strcmp(command->name, "cut") == 0)
+    return builtin_cut(command);
+
+  if (strcmp(command->name, "chatroom") == 0)
+    return builtin_chatroom(command);
+
+  if (strcmp(command->name, "countdown") == 0)
+    return builtin_countdown(command);
 
   pid_t pid = fork();
   if (pid == 0) // child
