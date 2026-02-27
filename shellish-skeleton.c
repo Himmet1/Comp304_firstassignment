@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,16 @@
 #include <termios.h> // termios, TCSANOW, ECHO, ICANON
 #include <unistd.h>
 const char *sysname = "shellish";
+
+/**
+ * Signal handler for SIGCHLD - reaps zombie background processes
+ */
+void sigchld_handler(int sig) {
+  (void)sig;
+  // Reap all finished child processes (non-blocking)
+  while (waitpid(-1, NULL, WNOHANG) > 0)
+    ;
+}
 
 enum return_codes {
   SUCCESS = 0,
@@ -306,6 +317,50 @@ int prompt(struct command_t *command) {
   return SUCCESS;
 }
 
+/**
+ * Resolve the full path of a command by searching through PATH directories.
+ * If the command already contains a '/', it is treated as a direct path.
+ * Otherwise, each directory in the PATH environment variable is checked.
+ *
+ * @param  command_name  the name of the command to resolve
+ * @param  resolved_path buffer to store the resolved full path
+ * @param  buf_size      size of the resolved_path buffer
+ * @return               0 on success, -1 if the command was not found
+ */
+int resolve_path(const char *command_name, char *resolved_path, size_t buf_size) {
+  // If the command contains a '/', treat it as a direct/relative path
+  if (strchr(command_name, '/') != NULL) {
+    strncpy(resolved_path, command_name, buf_size);
+    resolved_path[buf_size - 1] = '\0';
+    if (access(resolved_path, X_OK) == 0)
+      return 0;
+    return -1;
+  }
+
+  // Get the PATH environment variable
+  char *path_env = getenv("PATH");
+  if (path_env == NULL)
+    return -1;
+
+  // Make a mutable copy since strtok modifies the string
+  char *path_copy = strdup(path_env);
+  if (path_copy == NULL)
+    return -1;
+
+  char *dir = strtok(path_copy, ":");
+  while (dir != NULL) {
+    snprintf(resolved_path, buf_size, "%s/%s", dir, command_name);
+    if (access(resolved_path, X_OK) == 0) {
+      free(path_copy);
+      return 0; // found it
+    }
+    dir = strtok(NULL, ":");
+  }
+
+  free(path_copy);
+  return -1; // not found
+}
+
 int process_command(struct command_t *command) {
   int r;
   if (strcmp(command->name, "") == 0)
@@ -323,30 +378,33 @@ int process_command(struct command_t *command) {
     }
   }
 
+  // Resolve the full path of the command using PATH
+  char resolved_path[1024];
+  if (resolve_path(command->name, resolved_path, sizeof(resolved_path)) != 0) {
+    printf("-%s: %s: command not found\n", sysname, command->name);
+    return SUCCESS;
+  }
+
   pid_t pid = fork();
   if (pid == 0) // child
   {
-    /// This shows how to do exec with environ (but is not available on MacOs)
-    // extern char** environ; // environment variables
-    // execvpe(command->name, command->args, environ); // exec+args+path+environ
-
-    /// This shows how to do exec with auto-path resolve
-    // add a NULL argument to the end of args, and the name to the beginning
-    // as required by exec
-
-    // TODO: do your own exec with path resolving using execv()
-    // do so by replacing the execvp call below
-    execvp(command->name, command->args); // exec+args+path
-    printf("-%s: %s: command not found\n", sysname, command->name);
+    // Execute the command using execv with the resolved path
+    execv(resolved_path, command->args);
+    // If execv returns, it means it failed
+    printf("-%s: %s: %s\n", sysname, command->name, strerror(errno));
     exit(127);
   } else {
-    // TODO: implement background processes here
-    wait(0); // wait for child process to finish
+    if (!command->background) {
+      waitpid(pid, NULL, 0);
+    }
     return SUCCESS;
   }
 }
 
 int main() {
+  // Register signal handler to reap background child processes
+  signal(SIGCHLD, sigchld_handler);
+
   while (1) {
     struct command_t *command =
         (struct command_t *)malloc(sizeof(struct command_t));
