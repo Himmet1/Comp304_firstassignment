@@ -1,0 +1,2 @@
+-rwxrwxr-x 1 himmet himmet 22176 Şub 27 20:24 shell-ish
+-rw-rw-r-- 1 himmet himmet 13412 Şub 27 20:23 shellish-skeleton.c

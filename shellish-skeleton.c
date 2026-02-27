@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -361,6 +362,97 @@ int resolve_path(const char *command_name, char *resolved_path, size_t buf_size)
   return -1; // not found
 }
 
+/**
+ * Set up I/O redirections for the child process using dup2().
+ * redirects[0] = input file  (<)
+ * redirects[1] = output file (>, truncate)
+ * redirects[2] = append file (>>)
+ */
+void setup_redirections(struct command_t *command) {
+  // Input redirection: <inputfile
+  if (command->redirects[0]) {
+    int fd = open(command->redirects[0], O_RDONLY);
+    if (fd < 0) {
+      perror(command->redirects[0]);
+      exit(1);
+    }
+    dup2(fd, STDIN_FILENO);
+    close(fd);
+  }
+  // Output redirection: >outputfile (truncate)
+  if (command->redirects[1]) {
+    int fd = open(command->redirects[1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+      perror(command->redirects[1]);
+      exit(1);
+    }
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+  }
+  // Append redirection: >>appendfile
+  if (command->redirects[2]) {
+    int fd = open(command->redirects[2], O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) {
+      perror(command->redirects[2]);
+      exit(1);
+    }
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+  }
+}
+
+/**
+ * Execute a single command (used by both simple and piped execution).
+ * Resolves the path and calls execv(). Does not return on success.
+ */
+void exec_command(struct command_t *command) {
+  char resolved_path[1024];
+  if (resolve_path(command->name, resolved_path, sizeof(resolved_path)) != 0) {
+    printf("-%s: %s: command not found\n", sysname, command->name);
+    exit(127);
+  }
+  execv(resolved_path, command->args);
+  printf("-%s: %s: %s\n", sysname, command->name, strerror(errno));
+  exit(127);
+}
+
+/**
+ * Execute a pipeline of commands recursively.
+ * Each command in the chain is connected via pipes.
+ */
+void exec_pipeline(struct command_t *command) {
+  if (command->next == NULL) {
+    // Last (or only) command in the pipeline
+    setup_redirections(command);
+    exec_command(command);
+    return;
+  }
+
+  // Create a pipe: pipefd[0]=read end, pipefd[1]=write end
+  int pipefd[2];
+  if (pipe(pipefd) == -1) {
+    perror("pipe");
+    exit(1);
+  }
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    // Child: runs the CURRENT command, writes to pipe
+    close(pipefd[0]); // close unused read end
+    dup2(pipefd[1], STDOUT_FILENO); // stdout -> pipe write end
+    close(pipefd[1]);
+    setup_redirections(command);
+    exec_command(command);
+  } else {
+    // Parent: continues with the NEXT command, reads from pipe
+    close(pipefd[1]); // close unused write end
+    dup2(pipefd[0], STDIN_FILENO); // stdin -> pipe read end
+    close(pipefd[0]);
+    waitpid(pid, NULL, 0);
+    exec_pipeline(command->next); // recurse for next command
+  }
+}
+
 int process_command(struct command_t *command) {
   int r;
   if (strcmp(command->name, "") == 0)
@@ -378,21 +470,12 @@ int process_command(struct command_t *command) {
     }
   }
 
-  // Resolve the full path of the command using PATH
-  char resolved_path[1024];
-  if (resolve_path(command->name, resolved_path, sizeof(resolved_path)) != 0) {
-    printf("-%s: %s: command not found\n", sysname, command->name);
-    return SUCCESS;
-  }
-
   pid_t pid = fork();
   if (pid == 0) // child
   {
-    // Execute the command using execv with the resolved path
-    execv(resolved_path, command->args);
-    // If execv returns, it means it failed
-    printf("-%s: %s: %s\n", sysname, command->name, strerror(errno));
-    exit(127);
+    // Execute the pipeline (handles single commands too)
+    exec_pipeline(command);
+    exit(0); // should not reach here
   } else {
     if (!command->background) {
       waitpid(pid, NULL, 0);

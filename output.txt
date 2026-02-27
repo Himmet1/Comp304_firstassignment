@@ -1,0 +1,9 @@
+toplam 56
+drwxrwxr-x 3 himmet himmet  4096 Şub 27 20:38 .
+drwxrwxr-x 3 himmet himmet  4096 Şub 27 18:49 ..
+drwxrwxr-x 8 himmet himmet  4096 Şub 27 20:20 .git
+-rw-r--r-- 1 himmet himmet     0 Şub 27 20:38 output.txt
+-rw-rw-r-- 1 himmet himmet    25 Şub 27 18:49 README.md
+-rwxrwxr-x 1 himmet himmet 22176 Şub 27 20:24 shell-ish
+-rw-rw-r-- 1 himmet himmet 13412 Şub 27 20:23 shellish-skeleton.c
+test olaa
