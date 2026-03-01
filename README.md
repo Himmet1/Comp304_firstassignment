@@ -4,7 +4,7 @@ A custom Unix-style operating system shell written in C for COMP 304 Assignment 
 
 **Student:** Himmet
 
-**Repository:** https://github.com/himmet/Comp304_firstassignment
+**Repository:** https://github.com/Himmet1/Comp304_firstassignment
 
 ## Building and Running
 
@@ -15,13 +15,13 @@ gcc -o shell-ish shellish-skeleton.c
 
 ## Features
 
-### Part I - Core Shell (10 pts)
+### Part I - Core Shell
 - Command execution using `execv()` with manual PATH resolution (`resolve_path()`)
 - Background process support using `&` (shell returns prompt immediately)
 - Builtin `cd` and `exit` commands
 - SIGCHLD handler for reaping zombie background processes
 
-### Part II - I/O Redirection & Piping (10+10 pts)
+### Part II - I/O Redirection & Piping
 
 #### I/O Redirection
 - Input redirection: `wc -l <input.txt`
@@ -36,9 +36,9 @@ gcc -o shell-ish shellish-skeleton.c
 - Implemented recursively using `pipe()` and `dup2()`
 - Handles arbitrary-length pipe chains
 
-### Part III - Builtin Commands (25+25+20 pts)
+### Part III - Builtin Commands 
 
-#### (a) `cut` - Field Extraction (25 pts)
+#### (a) `cut` - Field Extraction 
 Reads from stdin and prints only specified fields, similar to UNIX `cut`.
 
 **Options:**
@@ -54,7 +54,7 @@ cat /etc/passwd | cut -d ":" -f 1,6
 # ...
 ```
 
-#### (b) `chatroom` - Group Chat via Named Pipes (25 pts)
+#### (b) `chatroom` - Group Chat via Named Pipes 
 Real-time group chat using named pipes (FIFOs).
 
 **Usage:** `chatroom <roomname> <username>`
@@ -74,7 +74,7 @@ chatroom comp304 ali
 chatroom comp304 mehmet
 ```
 
-#### (c) `countdown` - Sword Countdown Timer (20 pts, Custom Command)
+#### (c) `countdown` - Sword Countdown Timer (Custom Command)
 A visual countdown timer styled as a sword being forged. The blade fills up as time passes.
 
 **Usage:** `countdown <seconds>`
@@ -96,7 +96,3 @@ When complete:
   Done!  <>={===================================================>  100%
   Your sword is ready!
 ```
-
-## AI Citation
-
-AI coding assistant (Claude by Anthropic) was used to help with implementation of this assignment. All code was reviewed, tested, and understood by the student.
