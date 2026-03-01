@@ -598,6 +598,12 @@ int builtin_chatroom(struct command_t *command) {
     if (strlen(msg_buf) == 0)
       continue;
 
+    // Exit chatroom with /exit command
+    if (strcmp(msg_buf, "/exit") == 0) {
+      printf("Leaving %s. Goodbye!\n", roomname);
+      break;
+    }
+
     // Format the message
     char formatted[1200];
     snprintf(formatted, sizeof(formatted), "[%s] %s: %s\n", roomname, username, msg_buf);
@@ -659,31 +665,40 @@ int builtin_countdown(struct command_t *command) {
     return SUCCESS;
   }
 
-  printf("\n");
+  // Forging intro
+  printf("\n  Forging your sword... %d seconds\n\n", seconds);
+  sleep(1);
+
   for (int i = seconds; i > 0; i--) {
     // Clear line and print countdown
     printf("\r\033[K");  // clear line
-    // Sword progress bar: handle + guard + blade + tip
     int bar_width = 50;
     int filled = (int)((double)(seconds - i) / seconds * bar_width);
-    //         handle  guard
-    printf("  %3d sec  ◆═╬═", i);
+    int pct = (int)((double)(seconds - i) / seconds * 100);
+
+    // handle + guard + blade + tip (no color, no emoji)
+    printf("  %3d sec  <>={=", i);
     for (int j = 0; j < bar_width; j++) {
       if (j < filled)
-        printf("━");
+        printf("=");
       else
-        printf("╌");
+        printf("-");
     }
-    printf("▶  %d%%", (int)((double)(seconds - i) / seconds * 100));
+    if (filled > 0)
+      printf(">");
+    else
+      printf(" ");
+    printf("  %d%%", pct);
     fflush(stdout);
     sleep(1);
   }
 
   // Final state: full sword
   printf("\r\033[K");
-  printf("  ⚔️  Done!  ◆═╬═");
-  for (int j = 0; j < 50; j++) printf("━");
-  printf("▶  100%%\n\n");
+  printf("  Done!  <>={=");
+  for (int j = 0; j < 50; j++) printf("=");
+  printf(">  100%%\n");
+  printf("  Your sword is ready!\n\n");
 
   return SUCCESS;
 }

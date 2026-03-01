@@ -2,6 +2,8 @@
 
 A custom Unix-style operating system shell written in C for COMP 304 Assignment 1.
 
+**Student:** Himmet
+
 **Repository:** https://github.com/himmet/Comp304_firstassignment
 
 ## Building and Running
@@ -13,57 +15,67 @@ gcc -o shell-ish shellish-skeleton.c
 
 ## Features
 
-### Part I - Core Shell
-- Command execution using `execv()` with manual PATH resolution
-- Background process support (`&`)
+### Part I - Core Shell (10 pts)
+- Command execution using `execv()` with manual PATH resolution (`resolve_path()`)
+- Background process support using `&` (shell returns prompt immediately)
 - Builtin `cd` and `exit` commands
+- SIGCHLD handler for reaping zombie background processes
 
-### Part II - I/O Redirection & Piping
+### Part II - I/O Redirection & Piping (10+10 pts)
+
+#### I/O Redirection
 - Input redirection: `wc -l <input.txt`
-- Output redirection: `ls -la >output.txt`
+- Output redirection (truncate): `ls -la >output.txt`
 - Append redirection: `echo hello >>output.txt`
-- Piping: `ls -la | grep shell | wc`
+- Implemented using `dup2()` and `open()` system calls
 
-**Note:** No spaces between redirect symbols and filenames.
+**Note:** No spaces between redirect symbols and filenames (parser requirement).
 
-### Part III - Builtin Commands
+#### Piping
+- Supports multi-command pipes: `ls -la | grep shell | wc`
+- Implemented recursively using `pipe()` and `dup2()`
+- Handles arbitrary-length pipe chains
 
-#### (a) `cut` - Field Extraction
-Reads from stdin and prints only specified fields.
+### Part III - Builtin Commands (25+25+20 pts)
+
+#### (a) `cut` - Field Extraction (25 pts)
+Reads from stdin and prints only specified fields, similar to UNIX `cut`.
 
 **Options:**
-- `-d` / `--delimiter` — delimiter character (default: TAB)
-- `-f` / `--fields` — comma-separated field indices
+- `-d` / `--delimiter` : delimiter character (default: TAB)
+- `-f` / `--fields` : comma-separated field indices (1-indexed)
 
 **Examples:**
 ```bash
 cat /etc/passwd | cut -d ":" -f 1,6
-# Output: root:/root, bin:/bin, etc.
-
-echo "a:b:c:d" | cut -d ":" -f 1,3
-# Output: a:c
+# root:/root
+# bin:/bin
+# mail:/var/spool/mail
+# ...
 ```
 
-#### (b) `chatroom` - Group Chat via Named Pipes
+#### (b) `chatroom` - Group Chat via Named Pipes (25 pts)
 Real-time group chat using named pipes (FIFOs).
 
 **Usage:** `chatroom <roomname> <username>`
 
-Rooms are created at `/tmp/chatroom-<roomname>/`. Each user gets a named pipe. Messages are sent by writing to all other users' pipes.
+- Rooms are created at `/tmp/chatroom-<roomname>/`
+- Each user gets a named pipe in the room directory
+- Messages sent by writing to all other users' named pipes using forked children
+- Messages received by continuously reading from own named pipe
+- Type `/exit` to leave the chatroom
 
-**Example (run in separate terminals):**
+**Example (two separate terminals):**
 ```bash
-# Terminal 1
+# Terminal 1:
 chatroom comp304 ali
 
-# Terminal 2
+# Terminal 2:
 chatroom comp304 mehmet
 ```
 
-Type messages in the prompt and they appear in all other users' terminals.
-
-#### (c) `countdown` - Sword Countdown Timer (Custom Command)
-A visual countdown timer styled as a sword whose blade fills up as time elapses.
+#### (c) `countdown` - Sword Countdown Timer (20 pts, Custom Command)
+A visual countdown timer styled as a sword being forged. The blade fills up as time passes.
 
 **Usage:** `countdown <seconds>`
 
@@ -74,12 +86,17 @@ countdown 10
 
 While counting:
 ```
-   7 sec  ◆═╬═━━━━━━━━━━━━━━╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌▶  30%
+  Forging your sword... 10 seconds
+
+   7 sec  <>={================------------------------------------>  34%
 ```
 
-When time is up — the full sword:
+When complete:
 ```
-  ⚔️  Done!  ◆═╬═━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━▶  100%
+  Done!  <>={===================================================>  100%
+  Your sword is ready!
 ```
 
-**Use cases:** Pomodoro timer, cooking timer, presentation countdown, or waiting for a build.
+## AI Citation
+
+AI coding assistant (Claude by Anthropic) was used to help with implementation of this assignment. All code was reviewed, tested, and understood by the student.

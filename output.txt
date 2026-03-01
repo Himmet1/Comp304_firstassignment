@@ -1,9 +1,13 @@
-toplam 56
-drwxrwxr-x 3 himmet himmet  4096 Şub 27 20:38 .
+toplam 88
+drwxrwxr-x 4 himmet himmet  4096 Mar  1 16:51 .
 drwxrwxr-x 3 himmet himmet  4096 Şub 27 18:49 ..
-drwxrwxr-x 8 himmet himmet  4096 Şub 27 20:20 .git
--rw-r--r-- 1 himmet himmet     0 Şub 27 20:38 output.txt
--rw-rw-r-- 1 himmet himmet    25 Şub 27 18:49 README.md
--rwxrwxr-x 1 himmet himmet 22176 Şub 27 20:24 shell-ish
--rw-rw-r-- 1 himmet himmet 13412 Şub 27 20:23 shellish-skeleton.c
-test olaa
+drwxrwxr-x 8 himmet himmet  4096 Şub 27 23:15 .git
+-rw-rw-r-- 1 himmet himmet    43 Mar  1 16:14 .gitignore
+drwxrwxr-x 2 himmet himmet  4096 Mar  1 16:52 imgs
+-rw-rw-r-- 1 himmet himmet   185 Mar  1 16:14 Makefile
+-rw-r--r-- 1 himmet himmet     0 Mar  1 16:52 output.txt
+-rw-rw-r-- 1 himmet himmet  2766 Mar  1 16:14 README.md
+-rw-r--r-- 1 himmet himmet   124 Şub 27 21:36 results.txt
+-rwxrwxr-x 1 himmet himmet 31152 Mar  1 15:25 shell-ish
+-rw-rw-r-- 1 himmet himmet 21080 Mar  1 15:24 shellish-skeleton.c
+olaa

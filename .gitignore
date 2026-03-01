@@ -1,0 +1,5 @@
+shell-ish
+*.o
+a.out
+output.txt
+results.txt
